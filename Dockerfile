@@ -19,4 +19,4 @@ COPY src ./src
 
 ENV PYTHONPATH="/app/src"
 ENV PATH="/app/.venv/bin:$PATH"
-ENTRYPOINT ["gunicorn", "--chdir", "src/absranobe", "-w", "1", "-b", "0.0.0.0:5000", "main:app"]
+ENTRYPOINT ["python", "-m", "absranobedb.main"]
