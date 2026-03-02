@@ -1,14 +1,23 @@
 import argparse
 import asyncio
+import logging
+import os
 import re
+import signal
+import sys
 from datetime import datetime
 from typing import Any
 
 import aiohttp
 from aiohttp import web
+from aiolimiter import AsyncLimiter
 from langcodes import Language
 
+from absranobedb import __version__
+
 API_URL = 'https://ranobedb.org/api/v0'
+
+logger = logging.getLogger('abs-ranobedb')
 
 
 def extract_author(details: dict[str, Any]) -> str:
@@ -91,26 +100,30 @@ def extract_isbn(details: dict[str, Any], tag: str) -> str:
     return ''
 
 
-async def fetch_book_data(book_id: int, session: aiohttp.ClientSession) -> dict[str, Any]:
+async def fetch_book_data(
+    book_id: int, session: aiohttp.ClientSession, limiter: AsyncLimiter
+) -> dict[str, Any]:
     try:
-        async with session.get(f'{API_URL}/book/{book_id}') as response:
-            response.raise_for_status()
-            data = await response.json()
-            if isinstance(data, dict):
-                summary = data.get('book', {})
-                if isinstance(summary, dict):
-                    return summary
-            return {}
-    except aiohttp.ClientError:
+        async with limiter:
+            async with session.get(f'{API_URL}/book/{book_id}') as response:
+                response.raise_for_status()
+                data = await response.json()
+                if isinstance(data, dict):
+                    summary = data.get('book', {})
+                    if isinstance(summary, dict):
+                        return summary
+                return {}
+    except aiohttp.ClientError as e:
+        logger.warning(f'failed to fetch details for book {book_id}: {e}')
         return {}
 
 
 async def extract_metadata(
-    summary: dict[str, Any], session: aiohttp.ClientSession
+    summary: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> dict[str, Any]:
     details = {}
     if book_id := summary.get('id'):
-        details = await fetch_book_data(int(book_id), session)
+        details = await fetch_book_data(int(book_id), session, limiter)
 
     tag = details.get('lang', summary.get('lang', ''))
     language = Language.get(tag).display_name() if tag else ''
@@ -137,35 +150,50 @@ async def extract_metadata(
 
 
 async def gather_matches(
-    data: dict[str, Any], session: aiohttp.ClientSession
+    data: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> list[dict[str, Any]]:
-    tasks = [extract_metadata(summary, session) for summary in data.get('books', [])]
+    tasks = [extract_metadata(summary, session, limiter) for summary in data.get('books', [])]
     return await asyncio.gather(*tasks)
 
 
 async def search(request: web.Request) -> web.Response:
     query = request.query.get('query')
     if not query:
+        logger.warning('received search request with empty query')
         return web.json_response({'error': 'empty query'}, status=400)
+
+    logger.info(f"searching RanobeDB for '{query}'")
+    session = request.app['client_session']
+    limiter = request.app['limiter']
+
     try:
         params = {'q': query, 'limit': '5'}
-        async with aiohttp.ClientSession() as session:
+        async with limiter:
             async with session.get(f'{API_URL}/books', params=params) as response:
                 response.raise_for_status()
                 data = await response.json()
                 if not isinstance(data, dict):
+                    logger.error(f"upstream returned invalid data type for '{query}'")
                     return web.json_response({'error': 'invalid upstream response'}, status=502)
-                matches = await gather_matches(data, session)
+                matches = await gather_matches(data, session, limiter)
+                suffix = '' if len(matches) == 1 else 'es'
+                logger.info(f"found {len(matches)} match{suffix} for '{query}'")
                 return web.json_response({'matches': matches})
+
     except aiohttp.ClientResponseError as e:
+        logger.error(f"upstream API error for '{query}': {e.status}")
         return web.json_response({'error': f'upstream API error: {e}'}, status=502)
     except aiohttp.ClientError as e:
+        logger.error(f"upstream connection failed for '{query}': {e}")
         return web.json_response({'error': f'upstream connection failed: {e}'}, status=502)
     except asyncio.TimeoutError:
+        logger.error(f"upstream API timed out for '{query}'")
         return web.json_response({'error': 'upstream API timed out'}, status=504)
     except ValueError as e:
+        logger.error(f"invalid upstream response for '{query}': {e}")
         return web.json_response({'error': f'invalid upstream response: {e}'}, status=502)
     except Exception as e:
+        logger.exception(f"internal server error while processing '{query}'")
         return web.json_response({'error': f'internal server error: {e}'}, status=500)
 
 
@@ -175,10 +203,43 @@ def main() -> None:
     parser.add_argument('--port', type=int, default=5000)
     args = parser.parse_args()
 
+    logging.basicConfig(
+        level=os.getenv('LOG_LEVEL', 'INFO').upper(),
+        format='[%(asctime)s %(levelname)s] [%(name)s] %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
+
+    async def on_startup(app: web.Application) -> None:
+        app['client_session'] = aiohttp.ClientSession()
+        app['limiter'] = AsyncLimiter(60, 60)
+
+    async def on_cleanup(app: web.Application) -> None:
+        await app['client_session'].close()
+
     app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
     app.router.add_get('/search', search)
 
-    web.run_app(app, host=args.host, port=args.port)
+    async def run_server() -> None:
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, args.host, args.port)
+        await site.start()
+
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        loop.add_signal_handler(signal.SIGTERM, stop_event.set)
+        loop.add_signal_handler(signal.SIGINT, stop_event.set)
+
+        await stop_event.wait()
+        await runner.cleanup()
+
+    logger.info(f'ABS-RanobeDB Metadata Provider {__version__}')
+    logger.info(f'running server on {args.host}:{args.port}')
+    asyncio.run(run_server())
 
 
 if __name__ == '__main__':
