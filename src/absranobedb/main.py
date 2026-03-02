@@ -2,10 +2,10 @@ import argparse
 import asyncio
 import logging
 import os
+import pprint
 import re
 import signal
 import sys
-from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -16,12 +16,17 @@ from langcodes import Language
 from absranobedb import __version__
 
 API_URL = 'https://ranobedb.org/api/v0'
+MAX_RESULTS = str(os.getenv('MAX_RESULTS', '5'))
 
 logger = logging.getLogger('abs-ranobedb')
 
 
+def extract_title(summary: dict[str, Any]) -> str:
+    return summary.get('title') or summary.get('romaji') or summary.get('romaji_orig') or ''
+
+
 def extract_author(details: dict[str, Any]) -> str:
-    author_names = []
+    author_names: list[str] = []
     for edition in details.get('editions', []):
         for staff in edition.get('staff', []):
             if staff.get('role_type') in ['author', 'artist']:
@@ -34,9 +39,13 @@ def extract_author(details: dict[str, Any]) -> str:
 
 
 def extract_series_name(details: dict[str, Any]) -> str:
-    series_data = details.get('series', {})
-    if series_data:
-        return series_data.get('title') or series_data.get('romaji') or ''
+    if series_data := details.get('series', {}):
+        return (
+            series_data.get('title')
+            or series_data.get('romaji')
+            or series_data.get('romaji_orig')
+            or ''
+        )
     return ''
 
 
@@ -46,6 +55,17 @@ def extract_sequence(details: dict[str, Any], book_id: int) -> str:
         if book_details.get('id') == book_id:
             return str(index + 1)
     return ''
+
+
+def extract_series(details: dict[str, Any], book_id: int | None) -> list[dict[str, Any]]:
+    series: list[dict[str, Any]] = []
+    if book_id is not None:
+        series_data = details.get('series', {})
+        if len(series_data.get('books', [])) > 1:
+            if series_name := extract_series_name(details):
+                sequence = extract_sequence(details, int(book_id))
+                series.append({'series': series_name, 'sequence': sequence})
+    return series
 
 
 def extract_description(details: dict[str, Any]) -> str:
@@ -66,21 +86,20 @@ def extract_genres(details: dict[str, Any]) -> list[str]:
 
 def extract_publisher(details: dict[str, Any], tag: str) -> str:
     publishers = details.get('publishers', [])
-    sorted_publishers = sorted(publishers, key=lambda x: 0 if x.get('lang') == tag else 1)
-    if sorted_publishers:
+    if sorted_publishers := sorted(publishers, key=lambda x: 0 if x.get('lang') == tag else 1):
         return str(sorted_publishers[0].get('name', ''))
     return ''
 
 
 def extract_year(details: dict[str, Any], tag: str, date: int | None = None) -> str:
     release_dates = details.get('c_release_dates', {})
-    release_date = release_dates.get(tag) or details.get('c_release_date') or date
-    if release_date:
-        if release_date > 30000000:
-            return str(datetime.fromtimestamp(release_date).year)
-        else:
-            return str(release_date)[:4]
+    if release_date := release_dates.get(tag) or details.get('c_release_date') or date:
+        return str(release_date)[:4]
     return ''
+
+
+def extract_language(tag: str) -> str:
+    return Language.get(tag).display_name() if tag else ''
 
 
 def extract_cover(details: dict[str, Any]) -> str:
@@ -120,38 +139,32 @@ async def fetch_book_data(
 
 async def extract_metadata(
     summary: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
-) -> dict[str, Any]:
-    details = {}
+) -> tuple[Any | None, dict[str, Any]]:
+    details: dict[str, Any] = {}
     if book_id := summary.get('id'):
         details = await fetch_book_data(int(book_id), session, limiter)
-
     tag = details.get('lang', summary.get('lang', ''))
-    language = Language.get(tag).display_name() if tag else ''
-    title = summary.get('title') or summary.get('romaji') or summary.get('title_orig') or ''
-
-    series: list[dict[str, Any]] = []
-    if book_id and (series_name := extract_series_name(details)):
-        sequence = extract_sequence(details, book_id)
-        series.append({'series': series_name, 'sequence': sequence})
-
-    return {
-        'title': title,
-        'subtitle': details.get('subtitle', ''),
-        'author': extract_author(details),
-        'series': series,
-        'description': extract_description(details),
-        'genres': extract_genres(details),
-        'publisher': extract_publisher(details, tag),
-        'publishedYear': extract_year(details, tag, summary.get('c_release_date')),
-        'language': language,
-        'cover': extract_cover(details),
-        'isbn': extract_isbn(details, tag),
-    }
+    return (
+        book_id,
+        {
+            'title': extract_title(summary),
+            'subtitle': details.get('subtitle', ''),
+            'author': extract_author(details),
+            'series': extract_series(details, book_id),
+            'description': extract_description(details),
+            'genres': extract_genres(details),
+            'publisher': extract_publisher(details, tag),
+            'publishedYear': extract_year(details, tag, summary.get('c_release_date')),
+            'language': extract_language(tag),
+            'cover': extract_cover(details),
+            'isbn': extract_isbn(details, tag),
+        },
+    )
 
 
 async def gather_matches(
     data: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
-) -> list[dict[str, Any]]:
+) -> list[tuple[Any | None, dict[str, Any]]]:
     tasks = [extract_metadata(summary, session, limiter) for summary in data.get('books', [])]
     return await asyncio.gather(*tasks)
 
@@ -167,7 +180,7 @@ async def search(request: web.Request) -> web.Response:
     limiter = request.app['limiter']
 
     try:
-        params = {'q': query, 'limit': '5'}
+        params = {'q': query, 'limit': MAX_RESULTS}
         async with limiter:
             async with session.get(f'{API_URL}/books', params=params) as response:
                 response.raise_for_status()
@@ -178,7 +191,11 @@ async def search(request: web.Request) -> web.Response:
                 matches = await gather_matches(data, session, limiter)
                 suffix = '' if len(matches) == 1 else 'es'
                 logger.info(f"found {len(matches)} match{suffix} for '{query}'")
-                return web.json_response({'matches': matches})
+                for i, (book_id, match) in enumerate(matches, start=1):
+                    logger.debug(
+                        f'({i}) https://ranobedb.org/book/{book_id}\n' + pprint.pformat(match)
+                    )
+                return web.json_response({'matches': [match for _, match in matches]})
 
     except aiohttp.ClientResponseError as e:
         logger.error(f"upstream API error for '{query}': {e.status}")

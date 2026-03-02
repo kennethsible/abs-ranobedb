@@ -20,7 +20,7 @@ dev = ["ruff>=0.15.4", "mypy>=1.19.1", "types-requests"]
 homepage = "https://github.com/kennethsible/abs-ranobedb"
 
 [project.scripts]
-mkvpriority = "absranobedb.main:main"
+absranobedb = "absranobedb.main:main"
 
 [tool.ruff]
 line-length = 100

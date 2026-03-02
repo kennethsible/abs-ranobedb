@@ -5,6 +5,7 @@ services:
     container_name: abs-ranobedb
     environment:
       LOG_LEVEL: "INFO"
+      MAX_RESULTS: 5
     ports:
       - "5000:5000"
     restart: unless-stopped
