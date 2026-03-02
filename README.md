@@ -2,17 +2,37 @@
 
 [RanobeDB](https://ranobedb.org/) is a database for Japanese light novels and any official translations. The current Audiobookshelf metadata providers frequently struggle with light novels. For example, Google Books often incorrectly identifies light novels as manga, assigns overly generic genres (e.g., "light novel" as the sole genre tag), and fails to recognize volume numbers as parts of a series.
 
-## Install with Docker
+## Run with Docker CLI
 
 ```bash
 docker run -d \
-    --name abs-ranobedb \
-    -p 5000:5000 \
-    --restart unless-stopped \
-    ghcr.io/kennethsible/abs-ranobedb
+  --name abs-ranobedb \
+  -p 5000:5000 \
+  --restart unless-stopped \
+  ghcr.io/kennethsible/abs-ranobedb
 ```
 
-## Setup with Audiobookshelf
+## Run with Docker Compose
+
+```docker
+services:
+  abs-ranobedb:
+    image: ghcr.io/kennethsible/abs-ranobedb
+    container_name: abs-ranobedb
+    environment:
+      LOG_LEVEL: "INFO"
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+```
+
+## Install with Python (No Docker)
+
+```bash
+pip install git+https://github.com/kennethsible/abs-ranobedb.git
+```
+
+## Configure Audiobookshelf
 
 ```text
 Settings -> Item Metadata Utils -> Custom Metadata Providers -> Add

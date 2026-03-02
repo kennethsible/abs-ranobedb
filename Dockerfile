@@ -15,6 +15,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+COPY pyproject.toml .
 COPY src ./src
 
 ENV PYTHONPATH="/app/src"
