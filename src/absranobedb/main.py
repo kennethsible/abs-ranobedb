@@ -137,6 +137,28 @@ async def fetch_book_data(
         return {}
 
 
+async def fetch_staff_ids(
+    author: str, session: aiohttp.ClientSession, limiter: AsyncLimiter
+) -> list[str]:
+    try:
+        async with limiter:
+            async with session.get(f'{API_URL}/staff', params={'q': author}) as response:
+                response.raise_for_status()
+                data = await response.json()
+                if not isinstance(data, dict):
+                    return []
+                staff_ids: list[str] = []
+                for person in data.get('staff', []):
+                    if not isinstance(person, dict):
+                        continue
+                    if staff_id := person.get('id'):
+                        staff_ids.append(str(staff_id))
+                return staff_ids
+    except aiohttp.ClientError as e:
+        logger.warning(f'failed to fetch IDs for author {author}: {e}')
+        return []
+
+
 async def extract_metadata(
     summary: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> tuple[Any | None, dict[str, Any]]:
@@ -170,8 +192,7 @@ async def gather_matches(
 
 
 async def search(request: web.Request) -> web.Response:
-    query = request.query.get('query')
-    if not query:
+    if not (query := request.query.get('query')):
         logger.warning('received search request with empty query')
         return web.json_response({'error': 'empty query'}, status=400)
 
@@ -180,7 +201,18 @@ async def search(request: web.Request) -> web.Response:
     limiter = request.app['limiter']
 
     try:
-        params = {'q': query, 'limit': MAX_RESULTS}
+        params = [('q', query), ('limit', MAX_RESULTS)]
+        if author := request.query.get('author'):
+            if staff_ids := await fetch_staff_ids(author, session, limiter):
+                for staff_id in staff_ids:
+                    params.append(('staff', staff_id))
+                if len(staff_ids) > 1:
+                    params.append(('sl', 'or'))
+                suffix = '' if len(staff_ids) == 1 else 'es'
+                logger.info(f"found {len(staff_ids)} match{suffix} for '{author}'")
+                for i, staff_id in enumerate(staff_ids, start=1):
+                    logger.debug(f'({i}) https://ranobedb.org/staff/{staff_id}')
+
         async with limiter:
             async with session.get(f'{API_URL}/books', params=params) as response:
                 response.raise_for_status()
