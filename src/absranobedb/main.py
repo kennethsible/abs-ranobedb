@@ -196,7 +196,6 @@ async def search(request: web.Request) -> web.Response:
         logger.warning('received search request with empty query')
         return web.json_response({'error': 'empty query'}, status=400)
 
-    logger.info(f"searching RanobeDB for '{query}'")
     session = request.app['client_session']
     limiter = request.app['limiter']
 
@@ -209,7 +208,7 @@ async def search(request: web.Request) -> web.Response:
                 if len(staff_ids) > 1:
                     params.append(('sl', 'or'))
                 suffix = '' if len(staff_ids) == 1 else 'es'
-                logger.info(f"found {len(staff_ids)} match{suffix} for '{author}'")
+                logger.info(f"found {len(staff_ids)} author match{suffix} for '{author}'")
                 for i, staff_id in enumerate(staff_ids, start=1):
                     logger.debug(f'({i}) https://ranobedb.org/staff/{staff_id}')
 
@@ -222,7 +221,7 @@ async def search(request: web.Request) -> web.Response:
                     return web.json_response({'error': 'invalid upstream response'}, status=502)
                 matches = await gather_matches(data, session, limiter)
                 suffix = '' if len(matches) == 1 else 'es'
-                logger.info(f"found {len(matches)} match{suffix} for '{query}'")
+                logger.info(f"found {len(matches)} query match{suffix} for '{query}'")
                 for i, (book_id, match) in enumerate(matches, start=1):
                     logger.debug(
                         f'({i}) https://ranobedb.org/book/{book_id}\n' + pprint.pformat(match)
