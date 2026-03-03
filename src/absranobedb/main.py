@@ -112,14 +112,20 @@ def extract_cover(details: dict[str, Any]) -> str:
     return ''
 
 
-def extract_isbn(details: dict[str, Any], tag: str) -> str:
+def extract_identifiers(details: dict[str, Any], tag: str) -> dict[str, str]:
+    identifiers = {'isbn': '', 'asin': ''}
     releases = details.get('releases', [])
     sorted_releases = sorted(releases, key=lambda x: 0 if x.get('lang') == tag else 1)
     for release in sorted_releases:
-        isbn = release.get('isbn13')
-        if isbn is not None:
-            return str(isbn)
-    return ''
+        isbn, amazon_link = release.get('isbn13'), release.get('amazon')
+        if not identifiers['isbn'] and isbn:
+            identifiers['isbn'] = str(isbn)
+        if not identifiers['asin'] and amazon_link:
+            if match := re.search(r'/dp/([A-Z0-9]{10})', str(amazon_link), re.IGNORECASE):
+                identifiers['asin'] = match.group(1).upper()
+        if identifiers['isbn'] and identifiers['asin']:
+            break
+    return identifiers
 
 
 async def fetch_book_data(
@@ -177,6 +183,8 @@ async def extract_metadata(
     if book_id := summary.get('id'):
         details = await fetch_book_data(int(book_id), session, limiter)
     tag = details.get('lang', summary.get('lang', ''))
+    date = summary.get('c_release_date')
+    identifiers = extract_identifiers(details, tag)
     return (
         book_id,
         {
@@ -187,10 +195,11 @@ async def extract_metadata(
             'description': extract_description(details),
             'genres': extract_genres(details),
             'publisher': extract_publisher(details, tag),
-            'publishedYear': extract_year(details, tag, summary.get('c_release_date')),
+            'publishedYear': extract_year(details, tag, date),
             'language': extract_language(tag),
             'cover': extract_cover(details),
-            'isbn': extract_isbn(details, tag),
+            'isbn': identifiers['isbn'],
+            'asin': identifiers['asin'],
         },
     )
 
