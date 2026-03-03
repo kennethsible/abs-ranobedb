@@ -20,4 +20,4 @@ COPY src ./src
 
 ENV PYTHONPATH="/app/src"
 ENV PATH="/app/.venv/bin:$PATH"
-ENTRYPOINT ["python", "-m", "absranobedb.main"]
+ENTRYPOINT ["python", "-m", "absranobedb.main", "--cache-dir", "/app/cache"]

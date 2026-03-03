@@ -1,11 +1,15 @@
 services:
   abs-ranobedb:
-    # build: .
     image: ghcr.io/kennethsible/abs-ranobedb
     container_name: abs-ranobedb
     environment:
       LOG_LEVEL: "INFO"
       MAX_RESULTS: 5
+    volumes:
+      - ranobedb_cache:/app/cache
     ports:
       - "5000:5000"
     restart: unless-stopped
+
+volumes:
+  ranobedb_cache:

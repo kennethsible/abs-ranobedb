@@ -5,11 +5,7 @@
 ## Run with Docker CLI
 
 ```bash
-docker run -d \
-  --name abs-ranobedb \
-  -p 5000:5000 \
-  --restart unless-stopped \
-  ghcr.io/kennethsible/abs-ranobedb
+docker run -d --name abs-ranobedb -p 5000:5000 ghcr.io/kennethsible/abs-ranobedb
 ```
 
 ## Run with Docker Compose
@@ -22,10 +18,18 @@ services:
     environment:
       LOG_LEVEL: "INFO"
       MAX_RESULTS: 5
+    volumes:
+      - ranobedb_cache:/app/cache
     ports:
       - "5000:5000"
     restart: unless-stopped
+
+volumes:
+  ranobedb_cache:
 ```
+
+> [!NOTE]
+> This project is not affiliated with RanobeDB, but it is built to strictly respect their API guidelines. To ensure responsible usage, `abs-ranobedb` has an internal rate limiter (max 60 requests per minute), utilizes a persistent Docker volume to cache redundant API calls, and allows users to limit the number of search results using an environment variable.
 
 ## Install with Python (No Docker)
 
@@ -44,4 +48,4 @@ Settings -> Item Metadata Utils -> Custom Metadata Providers -> Add
 - **Authorization Header Value**: None
 
 > [!IMPORTANT]
-> If Audiobookshelf is also running in Docker on the same network, the above URL can use the `abs-ranobedb` container name. However, if Audiobookshelf is running on the host, the URL should use `localhost` or your local IP with a forwarded port.
+> If Audiobookshelf is running on the host, use `localhost` or a local IP address in the URL field instead of the container name.

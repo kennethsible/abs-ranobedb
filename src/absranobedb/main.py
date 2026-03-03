@@ -6,10 +6,13 @@ import pprint
 import re
 import signal
 import sys
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 from aiohttp import web
+from aiohttp_client_cache.backends.sqlite import SQLiteBackend
+from aiohttp_client_cache.session import CachedSession
 from aiolimiter import AsyncLimiter
 from langcodes import Language
 
@@ -249,6 +252,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', type=str, default='0.0.0.0')
     parser.add_argument('--port', type=int, default=5000)
+    parser.add_argument('--cache-dir', type=str)
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -259,7 +263,19 @@ def main() -> None:
     logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
 
     async def on_startup(app: web.Application) -> None:
-        app['client_session'] = aiohttp.ClientSession()
+        if args.cache_dir:
+            cache_dir = Path(args.cache_dir)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = str(cache_dir / 'ranobedb')
+            cache = SQLiteBackend(
+                cache_name=cache_file,
+                expire_after=60 * 60 * 24 * 7,
+                allowed_methods=('GET',),
+                allowed_codes=(200,),
+            )
+            app['client_session'] = CachedSession(cache=cache)
+        else:
+            app['client_session'] = aiohttp.ClientSession()
         app['limiter'] = AsyncLimiter(60, 60)
 
     async def on_cleanup(app: web.Application) -> None:
