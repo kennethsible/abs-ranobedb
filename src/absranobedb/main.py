@@ -162,6 +162,14 @@ async def fetch_staff_ids(
         return []
 
 
+async def gather_authors(
+    author_string: str, session: aiohttp.ClientSession, limiter: AsyncLimiter
+) -> list[list[str]]:
+    authors = [a.strip() for a in re.split(r'[;,|]', author_string) if a.strip()]
+    tasks = [fetch_staff_ids(author, session, limiter) for author in authors]
+    return await asyncio.gather(*tasks)
+
+
 async def extract_metadata(
     summary: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> tuple[Any | None, dict[str, Any]]:
@@ -204,14 +212,16 @@ async def search(request: web.Request) -> web.Response:
 
     try:
         params = [('q', query), ('limit', MAX_RESULTS)]
-        if author := request.query.get('author'):
-            if staff_ids := await fetch_staff_ids(author, session, limiter):
+        if author_string := request.query.get('author'):
+            author_matches = await gather_authors(author_string, session, limiter)
+            staff_ids = list(dict.fromkeys(staff_id for ids in author_matches for staff_id in ids))
+            if staff_ids:
                 for staff_id in staff_ids:
                     params.append(('staff', staff_id))
                 if len(staff_ids) > 1:
                     params.append(('sl', 'or'))
                 suffix = '' if len(staff_ids) == 1 else 'es'
-                logger.info(f"found {len(staff_ids)} author match{suffix} for '{author}'")
+                logger.info(f"found {len(staff_ids)} author match{suffix} for '{author_string}'")
                 for i, staff_id in enumerate(staff_ids, start=1):
                     logger.debug(f'({i}) https://ranobedb.org/staff/{staff_id}')
 
@@ -222,14 +232,14 @@ async def search(request: web.Request) -> web.Response:
                 if not isinstance(data, dict):
                     logger.error(f"upstream returned invalid data type for '{query}'")
                     return web.json_response({'error': 'invalid upstream response'}, status=502)
-                matches = await gather_matches(data, session, limiter)
-                suffix = '' if len(matches) == 1 else 'es'
-                logger.info(f"found {len(matches)} query match{suffix} for '{query}'")
-                for i, (book_id, match) in enumerate(matches, start=1):
+                query_matches = await gather_matches(data, session, limiter)
+                suffix = '' if len(query_matches) == 1 else 'es'
+                logger.info(f"found {len(query_matches)} query match{suffix} for '{query}'")
+                for i, (book_id, match) in enumerate(query_matches, start=1):
                     logger.debug(
                         f'({i}) https://ranobedb.org/book/{book_id}\n' + pprint.pformat(match)
                     )
-                return web.json_response({'matches': [match for _, match in matches]})
+                return web.json_response({'matches': [match for _, match in query_matches]})
 
     except aiohttp.ClientResponseError as e:
         logger.error(f"upstream API error for '{query}': {e.status}")
