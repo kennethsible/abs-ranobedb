@@ -19,21 +19,27 @@ from langcodes import Language
 from absranobedb import __version__
 
 API_URL = 'https://ranobedb.org/api/v0'
-MAX_RESULTS = str(os.getenv('MAX_RESULTS', '5'))
+SEARCH_LIMIT = str(os.getenv('SEARCH_LIMIT') or os.getenv('MAX_RESULTS') or '5')
+PREFER_ROMAJI = os.getenv('PREFER_ROMAJI', 'true').lower() in ('true', '1', 't')
 
 logger = logging.getLogger('abs-ranobedb')
 
 
-def extract_title(summary: dict[str, Any]) -> str:
+def extract_title(summary: dict[str, Any], tag: str) -> str:
+    if PREFER_ROMAJI and tag == 'ja':
+        return summary.get('romaji') or summary.get('romaji_orig') or summary.get('title') or ''
     return summary.get('title') or summary.get('romaji') or summary.get('romaji_orig') or ''
 
 
-def extract_author(details: dict[str, Any]) -> str:
+def extract_author(details: dict[str, Any], tag: str) -> str:
     author_names: list[str] = []
     for edition in details.get('editions', []):
         for staff in edition.get('staff', []):
             if staff.get('role_type') in ['author', 'artist']:
-                name = staff.get('romaji') or staff.get('name')
+                if not PREFER_ROMAJI and tag == 'ja':
+                    name = staff.get('name') or staff.get('romaji')
+                else:
+                    name = staff.get('romaji') or staff.get('name')
                 if name and name not in author_names:
                     author_names.append(name)
     if author_names:
@@ -41,8 +47,15 @@ def extract_author(details: dict[str, Any]) -> str:
     return ''
 
 
-def extract_series_name(details: dict[str, Any]) -> str:
+def extract_series_name(details: dict[str, Any], tag: str) -> str:
     if series_data := details.get('series', {}):
+        if PREFER_ROMAJI and tag == 'ja':
+            return (
+                series_data.get('romaji')
+                or series_data.get('romaji_orig')
+                or series_data.get('title')
+                or ''
+            )
         return (
             series_data.get('title')
             or series_data.get('romaji')
@@ -60,19 +73,22 @@ def extract_sequence(details: dict[str, Any], book_id: int) -> str:
     return ''
 
 
-def extract_series(details: dict[str, Any], book_id: int | None) -> list[dict[str, Any]]:
+def extract_series(details: dict[str, Any], tag: str, book_id: int | None) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
     if book_id is not None:
         series_data = details.get('series', {})
         if len(series_data.get('books', [])) > 1:
-            if series_name := extract_series_name(details):
+            if series_name := extract_series_name(details, tag):
                 sequence = extract_sequence(details, int(book_id))
                 series.append({'series': series_name, 'sequence': sequence})
     return series
 
 
-def extract_description(details: dict[str, Any]) -> str:
-    description = str(details.get('description', '')).strip()
+def extract_description(details: dict[str, Any], tag: str) -> str:
+    if not PREFER_ROMAJI and tag == 'ja':
+        description = str(details.get('description_ja', '')).strip()
+    else:
+        description = str(details.get('description', '')).strip()
     description = re.sub(r'\s*\[From\s+.*\]\s*$', '', description)
     return description.strip()
 
@@ -90,7 +106,10 @@ def extract_genres(details: dict[str, Any]) -> list[str]:
 def extract_publisher(details: dict[str, Any], tag: str) -> str:
     publishers = details.get('publishers', [])
     if sorted_publishers := sorted(publishers, key=lambda x: 0 if x.get('lang') == tag else 1):
-        return str(sorted_publishers[0].get('name', ''))
+        publisher = sorted_publishers[0]
+        if PREFER_ROMAJI and tag == 'ja':
+            return publisher.get('romaji') or publisher.get('name') or ''
+        return publisher.get('name') or publisher.get('romaji') or ''
     return ''
 
 
@@ -188,11 +207,11 @@ async def extract_metadata(
     return (
         book_id,
         {
-            'title': extract_title(summary),
+            'title': extract_title(summary, tag),
             'subtitle': details.get('subtitle', ''),
-            'author': extract_author(details),
-            'series': extract_series(details, book_id),
-            'description': extract_description(details),
+            'author': extract_author(details, tag),
+            'series': extract_series(details, tag, book_id),
+            'description': extract_description(details, tag),
             'genres': extract_genres(details),
             'publisher': extract_publisher(details, tag),
             'publishedYear': extract_year(details, tag, date),
@@ -220,7 +239,7 @@ async def search(request: web.Request) -> web.Response:
     limiter = request.app['limiter']
 
     try:
-        params = [('q', query), ('limit', MAX_RESULTS)]
+        params = [('q', query), ('limit', SEARCH_LIMIT)]
         if author_string := request.query.get('author'):
             author_matches = await gather_authors(author_string, session, limiter)
             staff_ids = list(dict.fromkeys(staff_id for ids in author_matches for staff_id in ids))

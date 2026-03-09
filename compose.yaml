@@ -4,7 +4,8 @@ services:
     container_name: abs-ranobedb
     environment:
       LOG_LEVEL: "INFO"
-      MAX_RESULTS: 5
+      SEARCH_LIMIT: 5
+      PREFER_ROMAJI: "true"
     volumes:
       - ranobedb_cache:/app/cache
     ports:

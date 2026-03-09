@@ -17,7 +17,8 @@ services:
     container_name: abs-ranobedb
     environment:
       LOG_LEVEL: "INFO"
-      MAX_RESULTS: 5
+      SEARCH_LIMIT: 5
+      PREFER_ROMAJI: "true"
     volumes:
       - ranobedb_cache:/app/cache
     ports:
@@ -27,6 +28,12 @@ services:
 volumes:
   ranobedb_cache:
 ```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LOG_LEVEL` | `INFO` | Logging verbosity level (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `SEARCH_LIMIT` | `5` | Maximum number of search results to retrieve from RanobeDB |
+| `PREFER_ROMAJI` | `true` | If `true`, romanization is preferred for original Japanese releases |
 
 > [!NOTE]
 > This project is not affiliated with RanobeDB, but it is built to strictly respect their API guidelines. To ensure responsible usage, `abs-ranobedb` has an internal rate limiter (max 60 requests per minute), utilizes a persistent Docker volume to cache redundant API calls, and allows users to limit the number of search results using an environment variable.
