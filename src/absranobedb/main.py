@@ -21,6 +21,7 @@ from absranobedb import __version__
 API_URL = 'https://ranobedb.org/api/v0'
 SEARCH_LIMIT = str(os.getenv('SEARCH_LIMIT') or os.getenv('MAX_RESULTS') or '5')
 PREFER_ROMAJI = os.getenv('PREFER_ROMAJI', 'true').lower() in ('true', '1', 't')
+AMAZON_COVERS = os.getenv('AMAZON_COVERS', 'false').lower() in ('true', '1', 't')
 
 logger = logging.getLogger('abs-ranobedb')
 
@@ -131,6 +132,10 @@ def extract_cover(details: dict[str, Any]) -> str:
     return ''
 
 
+def fetch_cover(asin: str) -> str:
+    return f'https://images-na.ssl-images-amazon.com/images/P/{asin}.jpg'
+
+
 def extract_identifiers(details: dict[str, Any], tag: str) -> dict[str, str]:
     identifiers = {'isbn': '', 'asin': ''}
     releases = details.get('releases', [])
@@ -204,6 +209,7 @@ async def extract_metadata(
     tag = details.get('lang', summary.get('lang', ''))
     date = summary.get('c_release_date')
     identifiers = extract_identifiers(details, tag)
+    cover_image = fetch_cover(identifiers['asin']) if AMAZON_COVERS else extract_cover(details)
     return (
         book_id,
         {
@@ -216,7 +222,7 @@ async def extract_metadata(
             'publisher': extract_publisher(details, tag),
             'publishedYear': extract_year(details, tag, date),
             'language': extract_language(tag),
-            'cover': extract_cover(details),
+            'cover': cover_image,
             'isbn': identifiers['isbn'],
             'asin': identifiers['asin'],
         },

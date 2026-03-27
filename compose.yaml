@@ -6,6 +6,7 @@ services:
       LOG_LEVEL: "INFO"
       SEARCH_LIMIT: 5
       PREFER_ROMAJI: "true"
+      AMAZON_COVERS: "false"
     volumes:
       - ranobedb_cache:/app/cache
     ports:
