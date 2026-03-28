@@ -13,6 +13,7 @@ dependencies = [
     "requests>=2.33.0",
     "langcodes>=3.5.1",
     "language_data>=1.4.0",
+    "browserforge>=1.2.4",
 ]
 
 [dependency-groups]

@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import html
+import json
 import logging
 import os
 import pprint
@@ -14,6 +16,7 @@ from aiohttp import web
 from aiohttp_client_cache.backends.sqlite import SQLiteBackend
 from aiohttp_client_cache.session import CachedSession
 from aiolimiter import AsyncLimiter
+from browserforge.headers import HeaderGenerator
 from langcodes import Language
 
 from absranobedb import __version__
@@ -132,7 +135,36 @@ def extract_cover(details: dict[str, Any]) -> str:
     return ''
 
 
-def fetch_cover(asin: str) -> str:
+async def scrape_cover(asin: str, session: aiohttp.ClientSession, limiter: AsyncLimiter) -> str:
+    if not asin:
+        return ''
+    amazon_url = f'https://www.amazon.com/dp/{asin}'
+    headers = HeaderGenerator(browser='chrome', os='linux').generate()
+
+    try:
+        async with limiter:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with session.get(amazon_url, headers=headers, timeout=timeout) as response:
+                if response.status == 200:
+                    html_text = await response.text()
+                    match = re.search(
+                        r'id="landingImage"[^>]*data-a-dynamic-image="([^"]+)"', html_text
+                    )
+                    if match:
+                        image_data = json.loads(html.unescape(match.group(1)))
+                        image_url = list(image_data.keys())[0]
+                        return re.sub(r'\._[A-Za-z0-9_,\-]+(?=\.[a-zA-Z]+$)', '', image_url)
+                    else:
+                        logger.warning(f"upstream 'landingImage' missing for ASIN '{asin}'")
+                elif response.status == 503:
+                    logger.warning(f"request blocked for ASIN '{asin}': 503 CAPTCHA")
+    except asyncio.TimeoutError:
+        logger.warning(f"upstream timed out for ASIN '{asin}'")
+    except aiohttp.ClientError as e:
+        logger.warning(f"upstream connection failed for ASIN '{asin}': {e}")
+    except (json.JSONDecodeError, IndexError) as e:
+        logger.warning(f"upstream parsing failed for ASIN '{asin}': {e}")
+
     return f'https://images-na.ssl-images-amazon.com/images/P/{asin}.jpg'
 
 
@@ -207,9 +239,15 @@ async def extract_metadata(
     if book_id := summary.get('id'):
         details = await fetch_book_data(int(book_id), session, limiter)
     tag = details.get('lang', summary.get('lang', ''))
-    date = summary.get('c_release_date')
     identifiers = extract_identifiers(details, tag)
-    cover_image = fetch_cover(identifiers['asin']) if AMAZON_COVERS else extract_cover(details)
+
+    cover_image = ''
+    if AMAZON_COVERS and identifiers['asin']:
+        cover_image = await scrape_cover(identifiers['asin'], session, limiter)
+    if not cover_image:
+        cover_image = extract_cover(details)
+
+    date = summary.get('c_release_date')
     return (
         book_id,
         {
