@@ -6,18 +6,18 @@ license = { text = "MIT" }
 authors = [{ name = "Ken Sible", email = "ksible@outlook.com" }]
 requires-python = ">=3.13"
 dependencies = [
-    "aiohttp>=3.13.3",
+    "aiohttp>=3.13.5",
     "aiolimiter>=1.2.1",
     "aiosqlite>=0.22.1",
     "aiohttp-client-cache>=0.14.3",
-    "requests>=2.33.0",
+    "requests>=2.33.1",
     "langcodes>=3.5.1",
     "language_data>=1.4.0",
     "browserforge>=1.2.4",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.15.8", "mypy>=1.19.1", "types-requests"]
+dev = ["ruff>=0.15.8", "mypy>=1.20.0", "types-requests"]
 
 [project.urls]
 homepage = "https://github.com/kennethsible/abs-ranobedb"

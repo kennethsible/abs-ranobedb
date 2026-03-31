@@ -35,7 +35,7 @@ volumes:
 | `LOG_LEVEL` | `INFO` | Logging verbosity level (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `SEARCH_LIMIT` | `5` | Maximum number of search results to retrieve from RanobeDB |
 | `PREFER_ROMAJI` | `true` | If `true`, romanization is preferred for original Japanese releases |
-| `AMAZON_COVERS` | `false` | If `true`, larger cover images are fetched from Amazon via ASIN |
+| `AMAZON_COVERS` | `false` | If `true`, cover images are fetched from Amazon via release ASIN |
 
 > [!NOTE]
 > This project is not affiliated with RanobeDB, but it is built to strictly respect their API guidelines. To ensure responsible usage, `abs-ranobedb` has an internal rate limiter (max 60 requests per minute), utilizes a persistent Docker volume to cache redundant API calls, and allows users to limit the number of search results using an environment variable.
