@@ -39,7 +39,7 @@ def extract_author(details: dict[str, Any], tag: str) -> str:
     author_names: list[str] = []
     for edition in details.get('editions', []):
         for staff in edition.get('staff', []):
-            if staff.get('role_type') in ['author', 'artist']:
+            if staff.get('role_type') in ('author', 'artist'):
                 if not PREFER_ROMAJI and tag == 'ja':
                     name = staff.get('name') or staff.get('romaji')
                 else:
@@ -228,8 +228,9 @@ async def gather_authors(
     author_string: str, session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> list[list[str]]:
     authors = [a.strip() for a in re.split(r'[;,|]', author_string) if a.strip()]
-    tasks = [fetch_staff_ids(author, session, limiter) for author in authors]
-    return await asyncio.gather(*tasks)
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(fetch_staff_ids(author, session, limiter)) for author in authors]
+    return [task.result() for task in tasks]
 
 
 async def extract_metadata(
@@ -270,8 +271,12 @@ async def extract_metadata(
 async def gather_matches(
     data: dict[str, Any], session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> list[tuple[Any | None, dict[str, Any]]]:
-    tasks = [extract_metadata(summary, session, limiter) for summary in data.get('books', [])]
-    return await asyncio.gather(*tasks)
+    async with asyncio.TaskGroup() as tg:
+        tasks = [
+            tg.create_task(extract_metadata(summary, session, limiter))
+            for summary in data.get('books', [])
+        ]
+    return [task.result() for task in tasks]
 
 
 async def search(request: web.Request) -> web.Response:
@@ -377,8 +382,12 @@ def main() -> None:
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
 
-        loop.add_signal_handler(signal.SIGTERM, stop_event.set)
-        loop.add_signal_handler(signal.SIGINT, stop_event.set)
+        def handle_signal(sig_name: str) -> None:
+            logger.info(f'received {sig_name} signal; shutting down...')
+            stop_event.set()
+
+        loop.add_signal_handler(signal.SIGTERM, lambda: handle_signal('SIGTERM'))
+        loop.add_signal_handler(signal.SIGINT, lambda: handle_signal('SIGINT'))
 
         await stop_event.wait()
         await runner.cleanup()
