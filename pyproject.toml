@@ -1,6 +1,6 @@
 [project]
 name = "absranobedb"
-version = "1.4.1"
+version = "1.4.2"
 description = "RanobeDB Metadata Provider for Audiobookshelf"
 license = { text = "MIT" }
 authors = [{ name = "Ken Sible", email = "ksible@outlook.com" }]
@@ -10,14 +10,14 @@ dependencies = [
     "aiolimiter>=1.2.1",
     "aiosqlite>=0.22.1",
     "aiohttp-client-cache>=0.14.3",
-    "requests>=2.33.1",
+    "requests>=2.34.2",
     "langcodes>=3.5.1",
     "language_data>=1.4.0",
     "browserforge>=1.2.4",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.15.10", "mypy>=1.20.0", "types-requests"]
+dev = ["ruff>=0.15.13", "mypy>=2.1.0", "types-requests"]
 
 [project.urls]
 homepage = "https://github.com/kennethsible/abs-ranobedb"
@@ -39,5 +39,5 @@ strict = true
 ignore_missing_imports = true
 
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling>=1.29.0"]
 build-backend = "hatchling.build"

@@ -383,17 +383,19 @@ def main() -> None:
         loop = asyncio.get_running_loop()
 
         def handle_signal(sig_name: str) -> None:
-            logger.info(f'received {sig_name} signal; shutting down...')
+            logger.info(f'received {sig_name} signal')
             stop_event.set()
 
         loop.add_signal_handler(signal.SIGTERM, lambda: handle_signal('SIGTERM'))
         loop.add_signal_handler(signal.SIGINT, lambda: handle_signal('SIGINT'))
 
-        await stop_event.wait()
-        await runner.cleanup()
+        try:
+            await stop_event.wait()
+        finally:
+            await runner.cleanup()
 
     logger.info(f'ABS-RanobeDB Metadata Provider {__version__}')
-    logger.info(f'running server on {args.host}:{args.port}')
+    logger.info(f'proxy server started on {args.host}:{args.port}')
     asyncio.run(run_server())
 
 
