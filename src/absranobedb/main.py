@@ -107,6 +107,16 @@ def extract_genres(details: dict[str, Any]) -> list[str]:
     return genres
 
 
+def extract_tags(details: dict[str, Any]) -> list[str]:
+    tags: list[str] = []
+    series_data = details.get('series', {})
+    for tag in series_data.get('tags', []):
+        tag_name = tag.get('name', '')
+        if tag_name and tag.get('ttype') != 'genre':
+            tags.append(tag_name.title())
+    return tags
+
+
 def extract_publisher(details: dict[str, Any], tag: str) -> str:
     publishers = details.get('publishers', [])
     if sorted_publishers := sorted(publishers, key=lambda x: 0 if x.get('lang') == tag else 1):
@@ -258,6 +268,7 @@ async def extract_metadata(
             'series': extract_series(details, tag, book_id),
             'description': extract_description(details, tag),
             'genres': extract_genres(details),
+            'tags': extract_tags(details),
             'publisher': extract_publisher(details, tag),
             'publishedYear': extract_year(details, tag, date),
             'language': extract_language(tag),
