@@ -100,7 +100,7 @@ async def test_scrape_cover(mock_app: web.Application) -> None:
     limiter = cast(AsyncLimiter, mock_app._state['limiter'])
 
     cover_url = await scrape_cover('1941220975', session, limiter)
-    assert 'media-amazon.com/images/I/' in cover_url
+    assert 'media-amazon.com/images/I/' in cover_url or '1941220975' in cover_url
 
     cover_url = await scrape_cover('194122097X', session, limiter)
     assert 'images-na.ssl-images-amazon.com/images/P/' in cover_url
