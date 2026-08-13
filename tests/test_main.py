@@ -1,5 +1,6 @@
 import json
-from typing import Any, AsyncIterator, cast
+from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import aiohttp
 import pytest

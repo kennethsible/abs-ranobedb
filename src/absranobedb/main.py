@@ -161,13 +161,13 @@ async def scrape_cover(asin: str, session: aiohttp.ClientSession, limiter: Async
                     )
                     if match:
                         image_data = json.loads(html.unescape(match.group(1)))
-                        image_url = list(image_data.keys())[0]
+                        image_url = next(iter(image_data.keys()))
                         return re.sub(r'\._[A-Za-z0-9_,\-]+(?=\.[a-zA-Z]+$)', '', image_url)
                     else:
                         logger.warning(f"upstream 'landingImage' missing for ASIN '{asin}'")
                 elif response.status == 503:
                     logger.warning(f"request blocked for ASIN '{asin}': 503 CAPTCHA")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"upstream timed out for ASIN '{asin}'")
     except aiohttp.ClientError as e:
         logger.warning(f"upstream connection failed for ASIN '{asin}': {e}")
@@ -186,8 +186,9 @@ def extract_identifiers(details: dict[str, Any], tag: str) -> dict[str, str]:
         if not identifiers['isbn'] and isbn:
             identifiers['isbn'] = str(isbn)
         if not identifiers['asin'] and amazon_link:
-            if match := re.search(r'/dp/([A-Z0-9]{10})', str(amazon_link), re.IGNORECASE):
-                identifiers['asin'] = match.group(1).upper()
+            product_match = re.search(r'/dp/([A-Z0-9]{10})', str(amazon_link), re.IGNORECASE)
+            if product_match:
+                identifiers['asin'] = product_match.group(1).upper()
         if identifiers['isbn'] and identifiers['asin']:
             break
     return identifiers
@@ -197,15 +198,14 @@ async def fetch_book_data(
     book_id: int, session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> dict[str, Any]:
     try:
-        async with limiter:
-            async with session.get(f'{API_URL}/book/{book_id}') as response:
-                response.raise_for_status()
-                data = await response.json()
-                if isinstance(data, dict):
-                    summary = data.get('book', {})
-                    if isinstance(summary, dict):
-                        return summary
-                return {}
+        async with limiter, session.get(f'{API_URL}/book/{book_id}') as response:
+            response.raise_for_status()
+            data = await response.json()
+            if isinstance(data, dict):
+                summary = data.get('book', {})
+                if isinstance(summary, dict):
+                    return summary
+            return {}
     except aiohttp.ClientError as e:
         logger.warning(f'failed to fetch details for book {book_id}: {e}')
         return {}
@@ -215,19 +215,18 @@ async def fetch_staff_ids(
     author: str, session: aiohttp.ClientSession, limiter: AsyncLimiter
 ) -> list[str]:
     try:
-        async with limiter:
-            async with session.get(f'{API_URL}/staff', params={'q': author}) as response:
-                response.raise_for_status()
-                data = await response.json()
-                if not isinstance(data, dict):
-                    return []
-                staff_ids: list[str] = []
-                for person in data.get('staff', []):
-                    if not isinstance(person, dict):
-                        continue
-                    if staff_id := person.get('id'):
-                        staff_ids.append(str(staff_id))
-                return staff_ids
+        async with limiter, session.get(f'{API_URL}/staff', params={'q': author}) as response:
+            response.raise_for_status()
+            data = await response.json()
+            if not isinstance(data, dict):
+                return []
+            staff_ids: list[str] = []
+            for person in data.get('staff', []):
+                if not isinstance(person, dict):
+                    continue
+                if staff_id := person.get('id'):
+                    staff_ids.append(str(staff_id))
+            return staff_ids
     except aiohttp.ClientError as e:
         logger.warning(f'failed to fetch IDs for author {author}: {e}')
         return []
@@ -312,21 +311,18 @@ async def search(request: web.Request) -> web.Response:
                 for i, staff_id in enumerate(staff_ids, start=1):
                     logger.debug(f'({i}) https://ranobedb.org/staff/{staff_id}')
 
-        async with limiter:
-            async with session.get(f'{API_URL}/books', params=params) as response:
-                response.raise_for_status()
-                data = await response.json()
-                if not isinstance(data, dict):
-                    logger.error(f"upstream returned invalid data type for '{query}'")
-                    return web.json_response({'error': 'invalid upstream response'}, status=502)
-                query_matches = await gather_matches(data, session, limiter)
-                suffix = '' if len(query_matches) == 1 else 'es'
-                logger.info(f"found {len(query_matches)} query match{suffix} for '{query}'")
-                for i, (book_id, match) in enumerate(query_matches, start=1):
-                    logger.debug(
-                        f'({i}) https://ranobedb.org/book/{book_id}\n' + pprint.pformat(match)
-                    )
-                return web.json_response({'matches': [match for _, match in query_matches]})
+        async with limiter, session.get(f'{API_URL}/books', params=params) as response:
+            response.raise_for_status()
+            data = await response.json()
+            if not isinstance(data, dict):
+                logger.error(f"upstream returned invalid data type for '{query}'")
+                return web.json_response({'error': 'invalid upstream response'}, status=502)
+            query_matches = await gather_matches(data, session, limiter)
+            suffix = '' if len(query_matches) == 1 else 'es'
+            logger.info(f"found {len(query_matches)} query match{suffix} for '{query}'")
+            for i, (book_id, match) in enumerate(query_matches, start=1):
+                logger.debug(f'({i}) https://ranobedb.org/book/{book_id}\n' + pprint.pformat(match))
+            return web.json_response({'matches': [match for _, match in query_matches]})
 
     except aiohttp.ClientResponseError as e:
         logger.error(f"upstream API error for '{query}': {e.status}")
@@ -334,7 +330,7 @@ async def search(request: web.Request) -> web.Response:
     except aiohttp.ClientError as e:
         logger.error(f"upstream connection failed for '{query}': {e}")
         return web.json_response({'error': f'upstream connection failed: {e}'}, status=502)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.error(f"upstream API timed out for '{query}'")
         return web.json_response({'error': 'upstream API timed out'}, status=504)
     except ValueError as e:
