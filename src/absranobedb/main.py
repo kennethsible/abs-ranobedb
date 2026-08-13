@@ -79,12 +79,11 @@ def extract_sequence(details: dict[str, Any], book_id: int) -> str:
 
 def extract_series(details: dict[str, Any], tag: str, book_id: int | None) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
-    if book_id is not None:
-        series_data = details.get('series', {})
-        if len(series_data.get('books', [])) > 1:
-            if series_name := extract_series_name(details, tag):
-                sequence = extract_sequence(details, int(book_id))
-                series.append({'series': series_name, 'sequence': sequence})
+    if book_id is None:
+        return []
+    if series_name := extract_series_name(details, tag):
+        sequence = extract_sequence(details, int(book_id))
+        series.append({'series': series_name, 'sequence': sequence})
     return series
 
 
