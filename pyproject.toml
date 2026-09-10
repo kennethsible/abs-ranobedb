@@ -7,7 +7,7 @@ authors = [{ name = "Ken Sible", email = "ksible@outlook.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.14.3",
-    "aiolimiter>=1.2.1",
+    "aiolimiter>=1.3.0",
     "aiosqlite>=0.22.1",
     "aiohttp-client-cache>=0.14.3",
     "requests>=2.34.2",
@@ -18,8 +18,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.3",
-    "mypy>=2.3.0",
+    "ruff>=0.16.6",
+    "mypy>=2.3.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "types-requests",
