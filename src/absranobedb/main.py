@@ -343,7 +343,7 @@ async def search(request: web.Request) -> web.Response:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--host', type=str, default='0.0.0.0')
+    parser.add_argument('--host', type=str, default='0.0.0.0')  # nosec B104
     parser.add_argument('--port', type=int, default=5000)
     parser.add_argument('--cache-dir', type=str)
     args = parser.parse_args()
